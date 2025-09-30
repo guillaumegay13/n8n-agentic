@@ -28,6 +28,9 @@ const alias = [
 	{ find: 'stream', replacement: 'stream-browserify' },
 	// Ensure bare imports resolve to sources (not dist)
 	{ find: '@n8n/i18n', replacement: resolve(packagesDir, 'frontend', '@n8n', 'i18n', 'src') },
+	{ find: '@n8n/rest-api-client', replacement: resolve(packagesDir, 'frontend', '@n8n', 'rest-api-client', 'src') },
+	{ find: '@n8n/stores', replacement: resolve(packagesDir, 'frontend', '@n8n', 'stores', 'src') },
+	{ find: '@n8n/permissions', replacement: resolve(packagesDir, '@n8n', 'permissions', 'src') },
 	{
 		find: /^@n8n\/chat(.+)$/,
 		replacement: resolve(packagesDir, 'frontend', '@n8n', 'chat', 'src$1'),
@@ -53,8 +56,16 @@ const alias = [
 		replacement: resolve(packagesDir, 'frontend', '@n8n', 'i18n', 'src$1'),
 	},
 	{
+		find: /^@n8n\/rest-api-client(.+)$/,
+		replacement: resolve(packagesDir, 'frontend', '@n8n', 'rest-api-client', 'src$1'),
+	},
+	{
 		find: /^@n8n\/stores(.+)$/,
 		replacement: resolve(packagesDir, 'frontend', '@n8n', 'stores', 'src$1'),
+	},
+	{
+		find: /^@n8n\/permissions(.+)$/,
+		replacement: resolve(packagesDir, '@n8n', 'permissions', 'src$1'),
 	},
 	{
 		find: /^@n8n\/utils(.+)$/,

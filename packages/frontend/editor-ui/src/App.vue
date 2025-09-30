@@ -4,6 +4,8 @@ import '@/polyfills';
 import AssistantsHub from '@/components/AskAssistant/AssistantsHub.vue';
 import AskAssistantFloatingButton from '@/components/AskAssistant/Chat/AskAssistantFloatingButton.vue';
 import BannerStack from '@/components/banners/BannerStack.vue';
+import McpAgentSidebar from '@/components/McpAgent/McpAgentSidebar.vue';
+import McpAgentFloatingButton from '@/components/McpAgent/McpAgentFloatingButton.vue';
 import Modals from '@/components/Modals.vue';
 import Telemetry from '@/components/Telemetry.vue';
 import { useHistoryHelper } from '@/composables/useHistoryHelper';
@@ -21,6 +23,7 @@ import { useNDVStore } from '@/stores/ndv.store';
 import { useSettingsStore } from '@/stores/settings.store';
 import { useUIStore } from '@/stores/ui.store';
 import { useUsersStore } from '@/stores/users.store';
+import { useMcpAgentStore } from '@/stores/mcpAgent.store';
 import LoadingView from '@/views/LoadingView.vue';
 import { locale } from '@n8n/design-system';
 import { setLanguage } from '@n8n/i18n';
@@ -38,6 +41,7 @@ const rootStore = useRootStore();
 const assistantStore = useAssistantStore();
 const builderStore = useBuilderStore();
 const uiStore = useUIStore();
+const mcpAgentStore = useMcpAgentStore();
 const usersStore = useUsersStore();
 const settingsStore = useSettingsStore();
 const ndvStore = useNDVStore();
@@ -59,6 +63,7 @@ const appGrid = ref<Element | null>(null);
 
 const assistantSidebarWidth = computed(() => assistantStore.chatWidth);
 const builderSidebarWidth = computed(() => builderStore.chatWidth);
+const mcpSidebarWidth = computed(() => mcpAgentStore.chatWidth);
 
 useTelemetryContext({ ndv_source: computed(() => ndvStore.lastSetActiveNodeSource) });
 
@@ -88,7 +93,7 @@ const updateGridWidth = async () => {
 	}
 };
 // As assistant sidebar width changes, recalculate the total width regularly
-watch([assistantSidebarWidth, builderSidebarWidth], async () => {
+watch([assistantSidebarWidth, builderSidebarWidth, mcpSidebarWidth], async () => {
 	await updateGridWidth();
 });
 
@@ -151,8 +156,10 @@ useExposeCssVar('--ask-assistant-floating-button-bottom-offset', askAiFloatingBu
 			</div>
 			<Telemetry />
 			<AskAssistantFloatingButton v-if="assistantStore.isFloatingButtonShown" />
+			<McpAgentFloatingButton v-if="!mcpAgentStore.isOpen" />
 		</div>
 		<AssistantsHub />
+		<McpAgentSidebar />
 		<div :id="CODEMIRROR_TOOLTIP_CONTAINER_ELEMENT_ID" />
 	</div>
 </template>
