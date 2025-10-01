@@ -21,12 +21,13 @@ import { sanitizeHtml } from '@/utils/htmlUtils';
 import { MAX_DISPLAY_DATA_SIZE, NEW_ASSISTANT_SESSION_MODAL, VIEWS } from '@/constants';
 import type { BaseTextKey } from '@n8n/i18n';
 import { useAssistantStore } from '@/stores/assistant.store';
+import { useMcpAgentStore } from '@/stores/mcpAgent.store';
 import type { ChatRequest } from '@/types/assistant.types';
 import InlineAskAssistantButton from '@n8n/design-system/components/InlineAskAssistantButton/InlineAskAssistantButton.vue';
 import { useUIStore } from '@/stores/ui.store';
 import { isCommunityPackageName } from '@/utils/nodeTypesUtils';
 import { useAIAssistantHelpers } from '@/composables/useAIAssistantHelpers';
-import { N8nIconButton } from '@n8n/design-system';
+import { N8nButton, N8nIconButton } from '@n8n/design-system';
 
 type Props = {
 	// TODO: .node can be undefined
@@ -42,6 +43,7 @@ const clipboard = useClipboard();
 const toast = useToast();
 const i18n = useI18n();
 const assistantHelpers = useAIAssistantHelpers();
+const mcpAgentStore = useMcpAgentStore();
 
 const nodeTypesStore = useNodeTypesStore();
 const ndvStore = useNDVStore();
@@ -88,6 +90,8 @@ const n8nVersion = computed(() => {
 const hasManyInputItems = computed(() => {
 	return ndvStore.ndvInputData.length > 1;
 });
+
+const isMcpAgentBusy = computed(() => mcpAgentStore.isSending);
 
 const nodeDefaultName = computed(() => {
 	if (!node.value) {
@@ -447,6 +451,93 @@ async function onAskAssistantClick() {
 		has_existing_session: false,
 	});
 }
+
+function truncate(value: string, limit = 1200): string {
+	return value.length > limit ? `${value.slice(0, limit)}…` : value;
+}
+
+function safeStringify(value: unknown, limit = 1200): string | undefined {
+	if (value === undefined || value === null) {
+		return undefined;
+	}
+	if (typeof value === 'string') {
+		return truncate(value, limit);
+	}
+	try {
+		return truncate(JSON.stringify(value, null, 2), limit);
+	} catch (error) {
+		return undefined;
+	}
+}
+
+function buildMcpAgentPrompt(): string {
+	const segments: string[] = [];
+	segments.push('I need help fixing an n8n workflow error.');
+	segments.push(
+		'Please diagnose the failure, adjust the workflow if required, and rerun the failing node or the workflow to confirm the fix. Share the changes you applied.',
+	);
+
+	if (workflowId.value) {
+		segments.push(`Workflow ID: ${workflowId.value}`);
+	}
+
+	if (executionId.value) {
+		segments.push(`Execution ID: ${executionId.value}`);
+	}
+
+	if (node.value) {
+		segments.push(
+			`Node: "${node.value.name}" (${node.value.type} v${node.value.typeVersion})` +
+				(node.value.id ? ` [id: ${node.value.id}]` : ''),
+		);
+	}
+
+	const errorMessage = getErrorMessage();
+	if (errorMessage) {
+		segments.push(`Error message: ${errorMessage}`);
+	}
+
+	if (props.error.description) {
+		segments.push(`Description: ${props.error.description}`);
+	}
+
+	if (props.error.context?.parameter) {
+		segments.push(`Parameter: ${props.error.context.parameter}`);
+	}
+
+	if (props.error.context?.data) {
+		const dataString = safeStringify(props.error.context.data);
+		if (dataString) {
+			segments.push(`Context data:\n${dataString}`);
+		}
+	}
+
+	if (props.error.messages?.length) {
+		const firstMessage = safeStringify(props.error.messages[0]);
+		if (firstMessage) {
+			segments.push(`Raw message: ${firstMessage}`);
+		}
+	}
+
+	if (ndvStore.ndvInputData.length) {
+		const sampleInput = safeStringify(ndvStore.ndvInputData[0]);
+		if (sampleInput) {
+			segments.push(`Sample input item:\n${sampleInput}`);
+		}
+	}
+
+	return segments.join('\n\n');
+}
+
+async function onFixWithAgentClick() {
+	const prompt = buildMcpAgentPrompt();
+	if (!prompt.trim()) return;
+	mcpAgentStore.draft = prompt;
+	if (!mcpAgentStore.isOpen) {
+		mcpAgentStore.openPanel();
+	}
+	await mcpAgentStore.sendDraft();
+}
 </script>
 
 <template>
@@ -480,6 +571,21 @@ async function onAskAssistantClick() {
 				data-test-id="node-error-view-ask-assistant-button"
 			>
 				<InlineAskAssistantButton :asked="assistantAlreadyAsked" @click="onAskAssistantClick" />
+			</div>
+			<div
+				v-if="node && !isSubNodeError"
+				class="node-error-view__button"
+				data-test-id="node-error-view-fix-with-agent-button"
+			>
+				<N8nButton
+					type="secondary"
+					size="small"
+					icon="robot"
+					:loading="isMcpAgentBusy"
+					:disabled="isMcpAgentBusy"
+					label="Fix with Agent"
+					@click="onFixWithAgentClick"
+				/>
 			</div>
 		</div>
 

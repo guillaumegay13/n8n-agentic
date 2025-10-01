@@ -1,7 +1,13 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import SlideTransition from '@/components/transitions/SlideTransition.vue';
-import { N8nButton, N8nIconButton, N8nResizeWrapper, N8nInput } from '@n8n/design-system';
+import {
+	N8nButton,
+	N8nIconButton,
+	N8nResizeWrapper,
+	N8nInput,
+	N8nMarkdown,
+} from '@n8n/design-system';
 import { useMcpAgentStore } from '@/stores/mcpAgent.store';
 
 const store = useMcpAgentStore();
@@ -11,6 +17,13 @@ const isOpen = computed(() => store.isOpen);
 const chatWidth = computed(() => store.chatWidth);
 const isSending = computed(() => store.isSending);
 const errorMessage = computed(() => store.hasError);
+const messagesContainer = ref<HTMLElement | null>(null);
+const markdownOptions = {
+	markdown: {
+		breaks: true,
+		linkify: true,
+	},
+};
 
 function onResize(data: { width: number }) {
 	store.updateWidth(data.width);
@@ -30,6 +43,30 @@ function onInputKeydown(event: KeyboardEvent) {
 		void onSubmit();
 	}
 }
+
+function scrollToBottom() {
+	nextTick(() => {
+		const container = messagesContainer.value;
+		if (container) {
+			container.scrollTop = container.scrollHeight;
+		}
+	});
+}
+
+watch(
+	() => messages.value.length,
+	() => {
+		if (messages.value.length > 0) {
+			scrollToBottom();
+		}
+	},
+);
+
+watch(isOpen, (opened) => {
+	if (opened) {
+		scrollToBottom();
+	}
+});
 </script>
 
 <template>
@@ -52,7 +89,7 @@ function onInputKeydown(event: KeyboardEvent) {
 						<N8nIconButton icon="x" type="tertiary" size="medium" @click="store.closePanel" />
 					</div>
 				</header>
-				<section class="panel__body">
+				<section ref="messagesContainer" class="panel__body">
 					<ul class="messages">
 						<li
 							v-for="message in messages"
@@ -69,7 +106,13 @@ function onInputKeydown(event: KeyboardEvent) {
 								}}
 							</span>
 							<div class="messages__bubble">
-								<pre>{{ message.content }}</pre>
+								<N8nMarkdown
+									v-if="message.role === 'assistant'"
+									:content="message.content"
+									:options="markdownOptions"
+									class="messages__markdown"
+								/>
+								<pre v-else>{{ message.content }}</pre>
 								<time>{{ new Date(message.timestamp).toLocaleTimeString() }}</time>
 							</div>
 						</li>
@@ -179,6 +222,39 @@ function onInputKeydown(event: KeyboardEvent) {
 	color: var(--color-text-base);
 	max-width: 100%;
 	overflow-wrap: anywhere;
+}
+
+.messages__markdown {
+	white-space: pre-wrap;
+	font-size: var(--font-size-xs);
+	line-height: var(--font-line-height-regular);
+}
+
+.messages__markdown :deep(> *:first-child) {
+	margin-top: 0;
+}
+
+.messages__markdown :deep(p) {
+	margin: 0;
+	font-size: var(--font-size-xs);
+}
+
+.messages__markdown :deep(h1),
+.messages__markdown :deep(h2),
+.messages__markdown :deep(h3),
+.messages__markdown :deep(h4),
+.messages__markdown :deep(h5),
+.messages__markdown :deep(h6) {
+	margin: 0;
+	font-size: var(--font-size-s);
+}
+
+.messages__markdown :deep(strong) {
+	font-weight: var(--font-weight-extrabold);
+}
+
+.messages__markdown :deep(li) {
+	font-size: var(--font-size-xs);
 }
 
 .messages__item--user .messages__bubble {

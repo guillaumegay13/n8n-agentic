@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 import { useUIStore } from './ui.store';
+import { useWorkflowsStore } from './workflows.store';
 
 export type McpAgentMessageRole = 'user' | 'assistant' | 'system' | 'error';
 
@@ -14,6 +15,12 @@ export interface McpAgentMessage {
 const DEFAULT_CHAT_WIDTH = 360;
 const MIN_CHAT_WIDTH = 280;
 const MAX_CHAT_WIDTH = 520;
+const WORKFLOW_REFRESH_TOOL_KEYWORDS = [
+	'n8n_create_workflow',
+	'n8n_update_full_workflow',
+	'n8n_update_partial_workflow',
+	'n8n_validate_workflow',
+];
 
 function sanitizeBaseUrl(raw: string | undefined): string {
 	if (!raw) return 'http://localhost:8000';
@@ -22,6 +29,7 @@ function sanitizeBaseUrl(raw: string | undefined): string {
 
 export const useMcpAgentStore = defineStore('mcpAgent', () => {
 	const uiStore = useUIStore();
+	const workflowsStore = useWorkflowsStore();
 
 	const chatWidth = ref<number>(DEFAULT_CHAT_WIDTH);
 	const isOpen = ref(false);
@@ -53,9 +61,87 @@ export const useMcpAgentStore = defineStore('mcpAgent', () => {
 		messages.value.push({
 			id: crypto.randomUUID(),
 			role,
-			content,
+			content: role === 'assistant' ? formatAssistantMessage(content) : content,
 			timestamp: timestamp(),
 		});
+
+		if (role === 'assistant' && shouldRefreshWorkflows(content)) {
+			void refreshWorkflowsList();
+		}
+	}
+
+	function formatAssistantMessage(content: string): string {
+		const trimmed = content.trim();
+		if (!trimmed) {
+			return content;
+		}
+
+		const structured = extractStructuredJson(trimmed);
+		if (!structured) {
+			return content;
+		}
+
+		const { json, index } = structured;
+		const prefix = trimmed.slice(0, index).trimEnd();
+
+		if (typeof json === 'object' && json) {
+			if (json.type === 'response' && typeof json.content === 'string') {
+				return prefix ? `${prefix}\n\n${json.content}` : json.content;
+			}
+
+			if (json.type === 'tool_call') {
+				const toolName = typeof json.tool === 'string' && json.tool ? json.tool : 'tool';
+				const actionText = `Running ${toolName}…`;
+				return prefix ? `${prefix}\n\n${actionText}` : actionText;
+			}
+		}
+
+		return content;
+	}
+
+	function extractStructuredJson(raw: string): { json: unknown; index: number } | null {
+		const trimmed = raw.trimEnd();
+		let searchIndex = trimmed.lastIndexOf('{');
+		while (searchIndex !== -1) {
+			const candidate = trimmed.slice(searchIndex);
+			try {
+				const parsed = JSON.parse(candidate);
+				return {
+					json: parsed,
+					index: searchIndex,
+				};
+			} catch (error) {
+				searchIndex = trimmed.lastIndexOf('{', searchIndex - 1);
+			}
+		}
+		return null;
+	}
+
+	async function refreshWorkflowsList() {
+		try {
+			await workflowsStore.fetchAllWorkflows();
+		} catch (error) {
+			console.warn('Failed to refresh workflows after MCP response', error);
+		}
+	}
+
+	function shouldRefreshWorkflows(raw: string): boolean {
+		const structured = extractStructuredJson(raw);
+		if (!structured) {
+			return false;
+		}
+		const payload = structured.json as Record<string, unknown> | null;
+		if (!payload || typeof payload !== 'object') {
+			return false;
+		}
+		if (payload.type !== 'tool_call') {
+			return false;
+		}
+		const toolName = typeof payload.tool === 'string' ? payload.tool : '';
+		if (!toolName) {
+			return false;
+		}
+		return WORKFLOW_REFRESH_TOOL_KEYWORDS.some((keyword) => toolName.includes(keyword));
 	}
 
 	function openPanel() {
