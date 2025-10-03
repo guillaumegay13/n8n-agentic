@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
+import { storeToRefs } from 'pinia';
 import SlideTransition from '@/components/transitions/SlideTransition.vue';
 import {
 	N8nButton,
@@ -8,15 +9,32 @@ import {
 	N8nInput,
 	N8nMarkdown,
 } from '@n8n/design-system';
-import { useMcpAgentStore } from '@/stores/mcpAgent.store';
+import { useMcpAgentStore, TRACE_PLACEHOLDER_SUMMARY } from '@/stores/mcpAgent.store';
 
 const store = useMcpAgentStore();
+const {
+	messages,
+	isOpen,
+	chatWidth,
+	isSending,
+	hasError,
+	thinkingTrace,
+	hasTrace,
+	isTraceExpanded,
+} = storeToRefs(store);
 
-const messages = computed(() => store.messages);
-const isOpen = computed(() => store.isOpen);
-const chatWidth = computed(() => store.chatWidth);
-const isSending = computed(() => store.isSending);
-const errorMessage = computed(() => store.hasError);
+const traceBadgeCount = computed(() =>
+	Math.max(
+		0,
+		thinkingTrace.value.filter((entry) => entry.summary !== TRACE_PLACEHOLDER_SUMMARY).length,
+	),
+);
+const shouldShowThinking = computed(() => isSending.value || hasTrace.value);
+const thinkingButtonLabel = computed(() => {
+	if (isTraceExpanded.value) return 'Hide thinking';
+	if (isSending.value && traceBadgeCount.value === 0) return 'Thinking…';
+	return 'Show thinking…';
+});
 const messagesContainer = ref<HTMLElement | null>(null);
 const markdownOptions = {
 	markdown: {
@@ -35,6 +53,10 @@ async function onSubmit() {
 
 function onClear() {
 	store.clearConversation();
+}
+
+function toggleThinking() {
+	store.toggleTrace();
 }
 
 function onInputKeydown(event: KeyboardEvent) {
@@ -67,6 +89,21 @@ watch(isOpen, (opened) => {
 		scrollToBottom();
 	}
 });
+
+watch(isTraceExpanded, (expanded) => {
+	if (expanded) {
+		scrollToBottom();
+	}
+});
+
+watch(
+	() => thinkingTrace.value.length,
+	() => {
+		if (isTraceExpanded.value) {
+			scrollToBottom();
+		}
+	},
+);
 </script>
 
 <template>
@@ -117,6 +154,25 @@ watch(isOpen, (opened) => {
 							</div>
 						</li>
 					</ul>
+					<div v-if="shouldShowThinking" class="thinking">
+						<N8nButton
+							type="tertiary"
+							size="small"
+							:class="['thinking__toggle', { 'thinking__toggle--active': isTraceExpanded }]"
+							@click="toggleThinking"
+						>
+							{{ thinkingButtonLabel }}
+							<span v-if="traceBadgeCount > 0" class="thinking__badge">{{ traceBadgeCount }}</span>
+						</N8nButton>
+						<transition name="fade">
+							<ul v-if="isTraceExpanded" class="thinking__timeline">
+								<li v-for="entry in thinkingTrace" :key="entry.id" class="thinking__item">
+									<span class="thinking__summary">{{ entry.summary }}</span>
+									<time>{{ new Date(entry.timestamp).toLocaleTimeString() }}</time>
+								</li>
+							</ul>
+						</transition>
+					</div>
 				</section>
 				<footer class="panel__footer">
 					<form class="panel__form" @submit.prevent="onSubmit">
@@ -296,6 +352,91 @@ watch(isOpen, (opened) => {
 
 .messages__item--user .messages__bubble pre {
 	color: #fff;
+}
+
+.thinking {
+	display: flex;
+	flex-direction: column;
+	gap: var(--spacing-2xs);
+	margin-top: var(--spacing-s);
+}
+
+.thinking__toggle {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--spacing-2xs);
+	width: 100%;
+	padding: var(--spacing-s);
+	border-radius: var(--border-radius-large);
+	box-shadow: none;
+	background-color: transparent !important;
+	border: 1px solid var(--color-foreground-base) !important;
+	color: var(--color-text-base) !important;
+}
+
+.thinking__toggle:hover,
+.thinking__toggle:focus {
+	background-color: transparent !important;
+	border-color: var(--color-primary) !important;
+	color: var(--color-primary) !important;
+}
+
+.thinking__toggle--active {
+	box-shadow: var(--shadow-s);
+	border-color: var(--color-primary) !important;
+	color: var(--color-primary) !important;
+}
+
+.thinking__badge {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 1.5rem;
+	padding: 0 var(--spacing-4xs);
+	border-radius: var(--border-radius-base);
+	background: var(--color-foreground-base);
+	color: var(--color-surface-primary);
+	font-size: var(--font-size-3xs);
+	font-weight: var(--font-weight-bold);
+}
+
+.thinking__timeline {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: var(--spacing-4xs);
+}
+
+.thinking__item {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: var(--spacing-3xs);
+	background: var(--color-surface-secondary);
+	border-radius: var(--border-radius-base);
+	padding: var(--spacing-2xs) var(--spacing-s);
+	color: var(--color-text-light);
+	font-size: var(--font-size-2xs);
+}
+
+.thinking__summary {
+	width: 100%;
+	white-space: normal;
+	overflow-wrap: anywhere;
+}
+
+.fade-enter-active,
+.fade-leave-active {
+	opacity: 1;
+	transition: opacity 0.2s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+	opacity: 0;
 }
 
 .panel__footer {
